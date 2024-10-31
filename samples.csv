@@ -1,0 +1,3 @@
+sampleID,fastq1,fastq2
+sample1,in/fq/C1.R1_subset.fq.gz,in/fq/C1.R2_subset.fq.gz
+sample2,in/fq/C2.R1_subset.fq.gz,in/fq/C2.R2_subset.fq.gz
