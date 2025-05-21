@@ -1,15 +1,21 @@
-#STAR and snakemake need to be installed
-#navigate to Snakefile location and start pipeline with 
+# STAR and snakemake need to be installed
+# navigate to Snakefile location and start pipeline with 
 # "snakemake --cores 12" 
-#to align reads of two fastq samples to hg38 using STAR aligner
-
 
 import pandas as pd
+import os
 
 # Read the sample sheet
 configfile: "config.yaml"
 samples = pd.read_csv(config["sample_sheet"])
 print(samples)
+
+# Reference genome URL and output paths
+refGenomePathOrUrl = "https://ftp.ensembl.org/pub/release-113/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz"
+refGenome = "resources/genome.fa.gz"
+genomeFasta = "resources/genome.fa"
+starIndexDir = "resources/star_index"
+
 # Define input files for each sample
 SAMPLES = {
     row["sampleID"]: {
@@ -19,31 +25,68 @@ SAMPLES = {
     for _, row in samples.iterrows()
 }
 
-
 rule all:
     input:
-        # Collect all BAM files and the final MultiQC report
         expand("results/aligned/{sample}.bam", sample=SAMPLES.keys())
+
+rule download_reference:
+    output:
+        ref=refGenome
+    shell:
+        """
+        mkdir -p resources
+        wget -O {output.ref} {refGenomePathOrUrl}
+        """
+
+rule unzip_reference:
+    input:
+        ref=refGenome
+    output:
+        fasta=genomeFasta
+    shell:
+        """
+        gunzip -c {input.ref} > {output.fasta}
+        """
+
+rule generate_star_index:
+    input:
+        fasta=genomeFasta
+    output:
+        index_dir=directory(starIndexDir)
+    threads: 8
+    params:
+        docker=config.get("docker", True),
+        sjdbOverhang=100  # Can be adjusted depending on read length
+    shell:
+        """
+        {{"docker run --rm -v $(pwd):/data quay.io/biocontainers/star:2.6.1d--0 STAR" if params.docker else "STAR"}} \
+            --runThreadN {threads} \
+            --runMode genomeGenerate \
+            --genomeDir {output.index_dir} \
+            --genomeFastaFiles {input.fasta} \
+            --sjdbOverhang {params.sjdbOverhang}
+        """
 
 rule star_align:
     input:
         fastq1=lambda wildcards: SAMPLES[wildcards.sample]["fastq1"],
         fastq2=lambda wildcards: SAMPLES[wildcards.sample]["fastq2"],
-        genome_dir=config["star_index"]
+        genome_dir=starIndexDir
     output:
         bam="results/aligned/{sample}.bam",
         log="logs/{sample}_STAR.log"
     params:
-        # Adjust parameters as needed
-        extra=config.get("star_extra", "--outSAMtype BAM SortedByCoordinate")
+        extra=config.get("star_extra", "--outSAMtype BAM SortedByCoordinate"),
+        docker=config.get("docker", True)
     shell:
         """
-        STAR --genomeDir {input.genome_dir} \
-             --readFilesIn {input.fastq1} {input.fastq2} \
-             --readFilesCommand zcat \
-             {params.extra} \
-             --outFileNamePrefix results/aligned/{wildcards.sample}_ \
-             > {output.log} 2>&1
+        mkdir -p results/aligned logs
+        {{"docker run --rm -v $(pwd):/data quay.io/biocontainers/star:2.6.1d--0 STAR" if params.docker else "STAR"}} \
+            --genomeDir {input.genome_dir} \
+            --readFilesIn {input.fastq1} {input.fastq2} \
+            --readFilesCommand zcat \
+            {params.extra} \
+            --outFileNamePrefix results/aligned/{wildcards.sample}_ \
+            > {output.log} 2>&1
         mv results/aligned/{wildcards.sample}_Aligned.sortedByCoord.out.bam {output.bam}
         """
-
