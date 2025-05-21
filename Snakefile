@@ -1,22 +1,23 @@
-# STAR and snakemake need to be installed
-# navigate to Snakefile location and start pipeline with 
-# "snakemake --cores 12" 
-
 import pandas as pd
 import os
 
-# Read the sample sheet
+# Load config and sample sheet
 configfile: "config.yaml"
 samples = pd.read_csv(config["sample_sheet"])
 print(samples)
 
-# Reference genome URL and output paths
-refGenomePathOrUrl = "https://ftp.ensembl.org/pub/release-113/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz"
+# Reference genome URL from config (with default fallback)
+refGenomePathOrUrl = config.get(
+    "refGenomePathOrUrl",
+    "https://ftp.ensembl.org/pub/release-113/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz"
+)
+
+# File paths
 refGenome = "resources/genome.fa.gz"
 genomeFasta = "resources/genome.fa"
 starIndexDir = "resources/star_index"
 
-# Define input files for each sample
+# Prepare sample input mapping
 SAMPLES = {
     row["sampleID"]: {
         "fastq1": row["fastq1"],
@@ -56,7 +57,7 @@ rule generate_star_index:
     threads: 8
     params:
         docker=config.get("docker", True),
-        sjdbOverhang=100  # Can be adjusted depending on read length
+        sjdbOverhang=100
     shell:
         """
         {{"docker run --rm -v $(pwd):/data quay.io/biocontainers/star:2.6.1d--0 STAR" if params.docker else "STAR"}} \
