@@ -9,6 +9,6 @@ Tasks included in this workflow:
 Quick start: 
 1) Navigate to folder containing "Snakefile"
 2) Adjust parameters in config.yaml
-3) Start with `snakemake --cores 12` (using default parameters and example input files) 
+3) Start with `snakemake --sdm apptainer --cores all` (using default parameters and example input files) 
     * Attention: snakemake and STAR need to be installed and a reference genome index built with STAR
 

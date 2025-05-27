@@ -33,10 +33,12 @@ rule all:
 rule download_reference:
     output:
         ref=refGenome
+    container:
+        "docker://archlinux:base-20250518.0.352066"
     shell:
         """
         mkdir -p resources
-        wget -O {output.ref} {refGenomePathOrUrl}
+        curl -L -o {output.ref} {refGenomePathOrUrl}
         """
 
 rule unzip_reference:
@@ -44,6 +46,8 @@ rule unzip_reference:
         ref=refGenome
     output:
         fasta=genomeFasta
+    container:
+        "docker://archlinux:base-20250518.0.352066"
     shell:
         """
         gunzip -c {input.ref} > {output.fasta}
@@ -55,17 +59,16 @@ rule generate_star_index:
     output:
         index_dir=directory(starIndexDir)
     threads: 8
-    params:
-        docker=config.get("docker", True),
-        sjdbOverhang=100
+    container:
+        "docker://quay.io/biocontainers/star:2.6.1d--0"
     shell:
         """
-        {{"docker run --rm -v $(pwd):/data quay.io/biocontainers/star:2.6.1d--0 STAR" if params.docker else "STAR"}} \
+        mkdir -p {output.index_dir}
+        STAR \
             --runThreadN {threads} \
             --runMode genomeGenerate \
             --genomeDir {output.index_dir} \
-            --genomeFastaFiles {input.fasta} \
-            --sjdbOverhang {params.sjdbOverhang}
+            --genomeFastaFiles {input.fasta}
         """
 
 rule star_align:
@@ -76,13 +79,14 @@ rule star_align:
     output:
         bam="results/aligned/{sample}.bam",
         log="logs/{sample}_STAR.log"
+    container:
+        "docker://quay.io/biocontainers/star:2.6.1d--0"
     params:
         extra=config.get("star_extra", "--outSAMtype BAM SortedByCoordinate"),
-        docker=config.get("docker", True)
     shell:
         """
         mkdir -p results/aligned logs
-        {{"docker run --rm -v $(pwd):/data quay.io/biocontainers/star:2.6.1d--0 STAR" if params.docker else "STAR"}} \
+        STAR \
             --genomeDir {input.genome_dir} \
             --readFilesIn {input.fastq1} {input.fastq2} \
             --readFilesCommand zcat \
