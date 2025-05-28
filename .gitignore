@@ -1,2 +1,9 @@
 genome_index/
 in/ref/
+
+.snakemake/
+Log.out
+logs/
+resources/
+results/
+
