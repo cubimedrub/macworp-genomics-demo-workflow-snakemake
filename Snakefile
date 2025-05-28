@@ -1,16 +1,23 @@
-#STAR and snakemake need to be installed
-#navigate to Snakefile location and start pipeline with 
-# "snakemake --cores 12" 
-#to align reads of two fastq samples to hg38 using STAR aligner
-
-
 import pandas as pd
+import os
 
-# Read the sample sheet
+# Load config and sample sheet
 configfile: "config.yaml"
 samples = pd.read_csv(config["sample_sheet"])
 print(samples)
-# Define input files for each sample
+
+# Reference genome URL from config (with default fallback)
+refGenomePathOrUrl = config.get(
+    "refGenomePathOrUrl",
+    "https://ftp.ensembl.org/pub/release-113/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz"
+)
+
+# File paths
+refGenome = "resources/genome.fa.gz"
+genomeFasta = "resources/genome.fa"
+starIndexDir = "resources/star_index"
+
+# Prepare sample input mapping
 SAMPLES = {
     row["sampleID"]: {
         "fastq1": row["fastq1"],
@@ -19,31 +26,72 @@ SAMPLES = {
     for _, row in samples.iterrows()
 }
 
-
 rule all:
     input:
-        # Collect all BAM files and the final MultiQC report
         expand("results/aligned/{sample}.bam", sample=SAMPLES.keys())
+
+rule download_reference:
+    output:
+        ref=refGenome
+    container:
+        "docker://archlinux:base-20250518.0.352066"
+    shell:
+        """
+        mkdir -p resources
+        curl -L -o {output.ref} {refGenomePathOrUrl}
+        """
+
+rule unzip_reference:
+    input:
+        ref=refGenome
+    output:
+        fasta=genomeFasta
+    container:
+        "docker://archlinux:base-20250518.0.352066"
+    shell:
+        """
+        gunzip -c {input.ref} > {output.fasta}
+        """
+
+rule generate_star_index:
+    input:
+        fasta=genomeFasta
+    output:
+        index_dir=directory(starIndexDir)
+    threads: 8
+    container:
+        "docker://quay.io/biocontainers/star:2.6.1d--0"
+    shell:
+        """
+        mkdir -p {output.index_dir}
+        STAR \
+            --runThreadN {threads} \
+            --runMode genomeGenerate \
+            --genomeDir {output.index_dir} \
+            --genomeFastaFiles {input.fasta}
+        """
 
 rule star_align:
     input:
         fastq1=lambda wildcards: SAMPLES[wildcards.sample]["fastq1"],
         fastq2=lambda wildcards: SAMPLES[wildcards.sample]["fastq2"],
-        genome_dir=config["star_index"]
+        genome_dir=starIndexDir
     output:
         bam="results/aligned/{sample}.bam",
         log="logs/{sample}_STAR.log"
+    container:
+        "docker://quay.io/biocontainers/star:2.6.1d--0"
     params:
-        # Adjust parameters as needed
-        extra=config.get("star_extra", "--outSAMtype BAM SortedByCoordinate")
+        extra=config.get("star_extra", "--outSAMtype BAM SortedByCoordinate"),
     shell:
         """
-        STAR --genomeDir {input.genome_dir} \
-             --readFilesIn {input.fastq1} {input.fastq2} \
-             --readFilesCommand zcat \
-             {params.extra} \
-             --outFileNamePrefix results/aligned/{wildcards.sample}_ \
-             > {output.log} 2>&1
+        mkdir -p results/aligned logs
+        STAR \
+            --genomeDir {input.genome_dir} \
+            --readFilesIn {input.fastq1} {input.fastq2} \
+            --readFilesCommand zcat \
+            {params.extra} \
+            --outFileNamePrefix results/aligned/{wildcards.sample}_ \
+            > {output.log} 2>&1
         mv results/aligned/{wildcards.sample}_Aligned.sortedByCoord.out.bam {output.bam}
         """
-
