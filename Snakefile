@@ -34,11 +34,11 @@ rule download_reference:
     output:
         ref=refGenome
     container:
-        "docker://archlinux:base-20250518.0.352066"
+        "docker://quay.io/medbioinf/base-tools:1.0.0"
     shell:
         """
         mkdir -p resources
-        curl -L -o {output.ref} {refGenomePathOrUrl}
+        curl -v -k -L -o {output.ref} {refGenomePathOrUrl}
         """
 
 rule unzip_reference:
@@ -47,7 +47,7 @@ rule unzip_reference:
     output:
         fasta=genomeFasta
     container:
-        "docker://archlinux:base-20250518.0.352066"
+        "docker://quay.io/medbioinf/base-tools:1.0.0"
     shell:
         """
         gunzip -c {input.ref} > {output.fasta}
