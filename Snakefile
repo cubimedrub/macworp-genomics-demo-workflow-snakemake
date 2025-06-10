@@ -1,8 +1,10 @@
 import pandas as pd
 import os
 
-# Load config and sample sheet
-configfile: "config.yaml"
+# Load config and sample sheet conditionally
+if os.path.exists("config.yaml"):
+    configfile: "config.yaml"
+
 samples = pd.read_csv(config["sample_sheet"])
 print(samples)
 
